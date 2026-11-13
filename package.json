@@ -1,0 +1,11 @@
+{
+  "name": "feather-board",
+  "version": "1.0.0",
+  "description": "Feather Board - a shared kanban board for small birds, backed by SQLite",
+  "main": "api.js",
+  "scripts": {
+    "start": "node api.js"
+  },
+  "keywords": ["kanban", "board", "birds", "sqlite"],
+  "license": "MIT"
+}
