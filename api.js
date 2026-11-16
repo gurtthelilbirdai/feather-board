@@ -34,17 +34,20 @@ function json(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
   res.end(JSON.stringify(obj));
 }
-function readBody(req, cb) {
-  let raw = '';
-  req.on('data', c => { raw += c; if (raw.length > 100000) req.destroy(); });
-  req.on('end', () => {
-    let body = {};
-    try { body = JSON.parse(raw || '{}'); } catch (e) { body = {}; }
-    cb(body);
+function readBody(req) {
+  return new Promise(resolve => {
+    let raw = '';
+    req.on('data', c => { raw += c; if (raw.length > 100000) req.destroy(); });
+    req.on('end', () => {
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch (e) { body = {}; }
+      resolve(body);
+    });
+    req.on('error', () => resolve({}));
   });
 }
 
-module.exports = function handler(req, res, seg) {
+module.exports = async function handler(req, res, seg) {
   const route = seg[0];
 
   if (req.method === 'GET' && route === 'cards') {
@@ -56,52 +59,47 @@ module.exports = function handler(req, res, seg) {
   }
 
   if (req.method === 'POST' && route === 'card' && seg[1] === 'new') {
-    readBody(req, body => {
-      const title = String(body.title || '').trim().slice(0, 120);
-      if (!title) return json(res, 400, { error: 'title required' });
-      const column = COLUMNS.includes(body.column) ? body.column : 'todo';
-      const now = new Date().toISOString();
-      const card = {
-        id: 'crd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-        title,
-        notes: String(body.notes || '').slice(0, 1000),
-        column,
-        bird: String(body.bird || 'gurt').trim().slice(0, 40) || 'gurt',
-        created: now,
-        updated: now
-      };
-      stmt.insert.run(card);
-      return json(res, 200, { ok: true, card });
-    });
-    return true;
+    const body = await readBody(req);
+    const title = String(body.title || '').trim().slice(0, 120);
+    if (!title) return json(res, 400, { error: 'title required' });
+    const column = COLUMNS.includes(body.column) ? body.column : 'todo';
+    const now = new Date().toISOString();
+    const card = {
+      id: 'crd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      title,
+      notes: String(body.notes || '').slice(0, 1000),
+      column,
+      bird: String(body.bird || 'gurt').trim().slice(0, 40) || 'gurt',
+      created: now,
+      updated: now
+    };
+    stmt.insert.run(card);
+    return json(res, 200, { ok: true, card });
   }
 
   if (req.method === 'POST' && route === 'card' && seg[1] && seg[2] === 'move') {
-    readBody(req, body => {
-      const row = stmt.get.get(seg[1]);
-      if (!row) return json(res, 404, { error: 'no such card' });
-      const column = COLUMNS.includes(body.column) ? body.column : row.column;
-      const now = new Date().toISOString();
-      stmt.move.run(column, now, row.id);
-      return json(res, 200, { ok: true, card: stmt.get.get(row.id) });
-    });
-    return true;
+    const body = await readBody(req);
+    const row = stmt.get.get(seg[1]);
+    if (!row) return json(res, 404, { error: 'no such card' });
+    const column = COLUMNS.includes(body.column) ? body.column : row.column;
+    const now = new Date().toISOString();
+    stmt.move.run(column, now, row.id);
+    return json(res, 200, { ok: true, card: stmt.get.get(row.id) });
   }
 
   if (req.method === 'POST' && route === 'card' && seg[1] && seg[2] === 'edit') {
-    readBody(req, body => {
-      const row = stmt.get.get(seg[1]);
-      if (!row) return json(res, 404, { error: 'no such card' });
-      const title = String(body.title || row.title).trim().slice(0, 120) || row.title;
-      const notes = String(body.notes === undefined ? row.notes : body.notes).slice(0, 1000);
-      const now = new Date().toISOString();
-      stmt.update.run(title, notes, now, row.id);
-      return json(res, 200, { ok: true, card: stmt.get.get(row.id) });
-    });
-    return true;
+    const body = await readBody(req);
+    const row = stmt.get.get(seg[1]);
+    if (!row) return json(res, 404, { error: 'no such card' });
+    const title = String(body.title || row.title).trim().slice(0, 120) || row.title;
+    const notes = String(body.notes === undefined ? row.notes : body.notes).slice(0, 1000);
+    const now = new Date().toISOString();
+    stmt.update.run(title, notes, now, row.id);
+    return json(res, 200, { ok: true, card: stmt.get.get(row.id) });
   }
 
   if (req.method === 'POST' && route === 'card' && seg[1] && seg[2] === 'delete') {
+    await readBody(req);
     const row = stmt.get.get(seg[1]);
     if (!row) return json(res, 404, { error: 'no such card' });
     stmt.remove.run(seg[1]);
